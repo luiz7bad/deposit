@@ -1,0 +1,242 @@
+package rndalg;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Vector;
+
+import rndalg.Graph.Edge;
+import rndalg.Graph.MetaVertex;
+import rndalg.Graph.Vertex;
+import rndalg.view.GraphFrame;
+
+public class FastCut implements CutAlgorithm
+{
+private Graph	graphToCut;
+private int	totalCutValue;
+private int	numOfCuts;
+private int	lastCutValue;
+private int	numOperations;
+
+public FastCut(Graph toCut)
+{
+totalCutValue	= 0;
+numOfCuts	= 0;
+lastCutValue	= 0;
+numOperations	= 0;
+graphToCut	= toCut;
+}
+
+
+public static CutAlgorithmFactory getFactory() {
+return new CutAlgorithmFactory() {
+
+@Override
+public String name() {
+return "FastCut";
+}
+
+@Override
+public CutAlgorithm create(Graph graph) {
+FastCut fc = new FastCut(graph);
+fc.getCut();
+return fc;
+}
+};
+}
+
+
+@Override
+public Vector<Vertex> getCut()
+{
+totalCutValue	= 0;
+numOfCuts	= 0;
+lastCutValue	= 0;
+numOperations	= 0;
+
+Graph cutGraph	= this.fastCut(graphToCut.clone());
+MetaVertex v	= (MetaVertex)cutGraph.vertices.toArray()[0];
+Vector<Vertex> cut = new Vector<Vertex>(v.getContained());
+lastCutValue	= v.edges.size();
+
+return cut;
+}
+
+@Override
+public double getAverageCutValue()
+{
+if (numOfCuts == 0) return -1;
+
+return ((double)totalCutValue / (double)numOfCuts);
+}
+
+@Override
+public int getCutValue()
+{
+return lastCutValue;
+}
+
+@Override
+public long getOperationCount()
+{
+return numOperations;
+}
+
+private Graph fastCut(Graph g)
+{
+int n = g.vertices.size();
+
+if (n <= 6)
+{
+return bruteForceMinCut(g);
+}
+
+int t = (int)Math.ceil(1 + (n / Math.sqrt(2)));
+
+Graph h1 = contractSequence(g.clone(), t);	numOperations += n * n;
+Graph h2 = contractSequence(g, t);	numOperations += n * n;
+
+Graph m1 = fastCut(h1);
+Graph m2 = fastCut(h2);
+
+return determineMinCut(m1, m2);
+}
+
+private Graph contractSequence(Graph g, int targetvertices)
+{
+if (g.vertices.size() <= targetvertices) return g;
+
+Contract contract = new Contract(g);
+
+for (int nv = g.vertices.size(); nv > targetvertices; nv--)
+contract.contractEdge(contract.pickRandomEdge());
+
+return g;
+}
+
+private Graph bruteForceMinCut(Graph g)
+{
+int n = g.vertices.size();
+Vertex[] vs = g.vertices.toArray(new Vertex[1]);
+
+int minsize	= Integer.MAX_VALUE;
+List<Vertex> mincut	= new ArrayList<Vertex>(0);
+
+for (int i = 0; i < n; i++)
+{
+List<Vertex> current = new ArrayList<Vertex>(1);
+current.add(vs[i]);
+int cursize = determineCutSize(current);
+if (cursize <= minsize)
+{
+minsize = cursize;
+mincut = current;
+}
+
+for (int j = i+1; j < n-1; j++)
+{
+current = new ArrayList<Vertex>(2);
+current.add(vs[i]);
+current.add(vs[j]);
+cursize = determineCutSize(current);
+if (cursize <= minsize)
+{
+minsize = cursize;
+mincut = current;
+}
+
+for (int k = j+1; k < n-2; k++)
+{
+current = new ArrayList<Vertex>(3);
+current.add(vs[i]);
+current.add(vs[j]);
+current.add(vs[k]);
+cursize = determineCutSize(current);
+if (cursize <= minsize)
+{
+minsize = cursize;
+mincut = current;
+}
+}
+}
+}
+
+List<Vertex> inverse = new ArrayList<Vertex>();
+for (Vertex v : g.vertices)
+if (!mincut.contains(v))
+inverse.add(v);
+
+MetaVertex v1 = new MetaVertex(mincut);
+MetaVertex v2 = new MetaVertex(inverse);
+for (int i = 0; i < minsize; i++)
+v1.connectTo(v2);
+Graph result = new Graph(new Vertex[] {v1, v2});
+
+return result;
+}
+
+private Graph determineMinCut(Graph g1, Graph g2)
+{
+Vertex[] v1s = g1.vertices.toArray(new Vertex[1]);
+Vertex[] v2s = g2.vertices.toArray(new Vertex[1]);
+
+int size1 = v1s[0].edges.size();
+int size2 = v2s[0].edges.size();
+
+totalCutValue += size1;
+totalCutValue += size2;
+numOfCuts	+= 2;
+
+if (size1 < size2)
+return g1;
+else
+return g2;
+}
+
+private int determineCutSize(List<Vertex> selected)
+{
+int size = 0;
+
+for (Vertex v : selected)
+{
+for (Edge e : v.edges)
+{
+Vertex o = e.getOpposite(v);
+
+if (!selected.contains(o)) size++;
+}
+}
+
+return size;
+}
+
+public static void main(String[] args)
+{
+int n = 100;
+Graph g = GraphManager.buildIslands(n, 5, true);
+g.assignIDs();
+
+FastCut fc	= new FastCut(g);
+
+long time = System.currentTimeMillis();
+Vector<Vertex> cut = fc.getCut();
+time = System.currentTimeMillis() - time;
+
+long opcount = fc.getOperationCount();
+int expcount = (int)(n * n * Math.log(n));
+System.out.println("Average Cut Value:\t" + fc.getAverageCutValue());
+System.out.println("Final Cut Value:\t" + fc.getCutValue());
+System.out.println("Took:\t\t\t" + time / 1000.0);
+System.out.println("Operations:\t\t" + opcount);
+System.out.println("Exp. Operations:\t" + expcount);
+System.out.println("Diff:\t\t\t" + opcount / expcount);
+//new GraphFrame(g, cut);
+
+/*
+Vertex[] vs = g.vertices.toArray(new Vertex[1]);
+for (int i = 0; i < 6; i++)
+for (int j = i+1; j < 6; j++)
+for (int k = j+1; k < 6; k++)
+System.out.println(i+" "+j+" "+k+" - " +determineCutSize(new Vertex[] { vs[i], vs[j], vs[k] }));
+*/
+}
+}
